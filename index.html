@@ -380,6 +380,39 @@
   .best .bname{font-size:16px;font-weight:800;margin-top:2px;display:flex;align-items:center;gap:6px}
   .best .bsub{font-size:12px;color:var(--ink-soft);margin-top:3px}
   .sum-empty{color:var(--ink-soft);font-size:14px;text-align:center;padding:8px}
+  .fchip.on.tppl{background:#e7f3ec;border-color:var(--green);color:#3f8a5c}
+  .fall-btn{width:100%;border:0;border-radius:14px;padding:13px;font:inherit;font-weight:800;font-size:14px;
+    color:#fff;background:linear-gradient(135deg,#ff9a6b,#ec5fa0);box-shadow:0 8px 20px rgba(236,95,160,.35);
+    cursor:pointer;margin-top:14px;transition:transform .15s}
+  .fall-btn:active{transform:scale(.97)}
+
+  /* ---------- companions row in detail ---------- */
+  .with-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .with-chips .wc{font-size:12px;font-weight:700;background:#e7f3ec;color:#3f8a5c;padding:4px 10px;border-radius:20px}
+
+  /* ---------- falling photo wall ---------- */
+  .fall-overlay{position:fixed;inset:0;z-index:80;display:none;
+    background:radial-gradient(120% 90% at 50% 0%, #2a2118 0%, #1a140e 100%);
+    flex-direction:column;overflow:hidden}
+  .fall-overlay.show{display:flex}
+  .fall-top{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 6px;z-index:5}
+  .fall-title{color:#fff;font-weight:800;font-size:18px;text-shadow:0 2px 8px rgba(0,0,0,.4)}
+  .fall-x{border:0;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.16);color:#fff;
+    font-size:18px;cursor:pointer;backdrop-filter:blur(4px)}
+  .fall-stage{position:relative;flex:1;width:100%;overflow:hidden}
+  .fall-item{position:absolute;left:50%;top:0;width:120px;height:120px;border-radius:14px;
+    background-size:cover;background-position:center;background-color:#fff;
+    box-shadow:0 10px 26px rgba(0,0,0,.45);border:4px solid #fff;transform:translate(-50%,-400px);
+    will-change:transform;display:flex;align-items:flex-end;overflow:hidden}
+  .fall-item.emoji{font-size:52px;align-items:center;justify-content:center}
+  .fall-item .cap{width:100%;padding:5px 7px;font-size:11px;font-weight:700;color:#fff;
+    background:linear-gradient(transparent,rgba(0,0,0,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fall-item.emoji .cap{color:var(--ink);background:transparent;position:absolute;bottom:2px;text-shadow:none}
+  .fall-replay{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);z-index:6;
+    border:0;border-radius:24px;padding:12px 24px;font:inherit;font-weight:800;color:#fff;
+    background:rgba(255,255,255,.18);backdrop-filter:blur(6px);cursor:pointer}
+  .fall-replay:active{transform:translateX(-50%) scale(.95)}
+  .fall-empty{color:#fff9;text-align:center;margin-top:40%;font-size:15px;padding:0 30px;line-height:1.6}
 </style>
 </head>
 <body>
@@ -519,6 +552,11 @@
     </div>
 
     <label class="fld">
+      <span class="lab">👥 和谁一起吃</span>
+      <input class="input" id="fWith" placeholder="用逗号分隔,例如:小明、室友(自己吃可留空)" />
+    </label>
+
+    <label class="fld">
       <span class="lab">😋 心情打分</span>
       <div class="moods" id="moods"></div>
     </label>
@@ -573,6 +611,16 @@
       💡 提示:网页版和「主屏 App」在 iPhone 上是<b>各自独立的存储</b>,数据不互通。想把网页里记的搬进主屏 App,就在网页里<b>导出</b>,再到主屏 App 里<b>导入</b>。换手机也是一样的方法。
     </div>
   </div>
+</div>
+
+<!-- Falling photo wall -->
+<div class="fall-overlay" id="fallOverlay">
+  <div class="fall-top">
+    <div class="fall-title" id="fallTitle">本月</div>
+    <button class="fall-x" id="fallClose">✕</button>
+  </div>
+  <div class="fall-stage" id="fallStage"></div>
+  <button class="fall-replay" id="fallReplay">↻ 再来一次</button>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -637,6 +685,7 @@ let dayFocus = null;         // 'YYYY-MM-DD' when in day view
 const urlCache = {};         // photoId -> objectURL
 const filterCats = new Set();   // active category filters (empty = all)
 const filterTypes = new Set();  // active type filters (empty = all)
+const filterPeople = new Set(); // active companion filters (empty = all)
 
 /* ---------- helpers ---------- */
 const $ = s=>document.querySelector(s);
@@ -648,7 +697,28 @@ function sameYmd(a,b){return ymd(a)===ymd(b);}
 function passFilter(e){
   if(filterCats.size && !filterCats.has(e.category)) return false;
   if(filterTypes.size && !filterTypes.has(e.type||'meal')) return false;
+  if(filterPeople.size){ const cs=e.companions||[]; if(!cs.some(c=>filterPeople.has(c))) return false; }
   return true;
+}
+// rebuild the dynamic "who I ate with" chips from current data
+function renderPeopleChips(){
+  const bar=$('#filterbar');
+  bar.querySelectorAll('.pchip,.pdiv').forEach(n=>n.remove());
+  const people=[...new Set(entries.flatMap(e=>e.companions||[]))];
+  // drop stale selections no longer present
+  [...filterPeople].forEach(p=>{ if(!people.includes(p)) filterPeople.delete(p); });
+  if(!people.length) return;
+  const div=document.createElement('div'); div.className='fdiv pdiv'; bar.appendChild(div);
+  people.forEach(p=>{
+    const c=document.createElement('div');
+    c.className='fchip pchip tppl'+(filterPeople.has(p)?' on':'');
+    c.textContent='👤 '+p; c.dataset.fp=p;
+    c.addEventListener('click',()=>{
+      if(filterPeople.has(p)) filterPeople.delete(p); else filterPeople.add(p);
+      c.classList.toggle('on'); render();
+    });
+    bar.appendChild(c);
+  });
 }
 function entriesOn(dateStr, applyFilter=true){
   return entries.filter(e=>e.date===dateStr && (!applyFilter || passFilter(e)))
@@ -728,6 +798,7 @@ async function renderMonth(){
     $('#main').querySelectorAll('.sum-bar .fill').forEach(f=>{ f.style.width=f.dataset.w; });
   });
   loadSummaryPhoto();
+  const fb=$('#fallBtn'); if(fb) fb.addEventListener('click',()=>playFall(y,m));
 
   // lazy-load thumbnails
   for(const c of cells){
@@ -800,6 +871,7 @@ function buildMonthSummary(y,m){
       </div>
     </div>`;
   }
+  h+=`<button class="fall-btn" id="fallBtn">🎞️ 本月吃过的 · 照片掉落</button>`;
   h+=`</div>`;
   return h;
 }
@@ -917,6 +989,9 @@ async function renderDay(){
       if(e.category==='bought' && e.shop){
         html+=`<div class="meta"><div class="row"><span class="k">🛍️ 购于</span><span>${esc(e.shop)}</span></div></div>`;
       }
+      if(e.companions?.length){
+        html+=`<div class="with-chips">${e.companions.map(c=>`<span class="wc">👤 ${esc(c)}</span>`).join('')}</div>`;
+      }
       if(e.note) html+=`<div class="enote">${esc(e.note)}</div>`;
       html+=`</div></div>`;
     }
@@ -988,6 +1063,7 @@ function openSheet(entry, presetDate){
     $('#fShop').value=entry.shop||'';
     $('#fRestName').value=entry.restName||'';
     $('#fRestLoc').value=entry.restLoc||'';
+    $('#fWith').value=(entry.companions||[]).join('、');
     $('#fNote').value=entry.note||'';
     if(entry.photoId){ photoURL(entry.photoId).then(u=>{ if(u && editing===entry) showPhoto(u); }); }
   }else{
@@ -998,7 +1074,7 @@ function openSheet(entry, presetDate){
     setType('meal');
     setMood(0);
     setCat('home');
-    ['fIngredients','fSteps','fShop','fRestName','fRestLoc','fNote'].forEach(id=>$('#'+id).value='');
+    ['fIngredients','fSteps','fShop','fRestName','fRestLoc','fWith','fNote'].forEach(id=>$('#'+id).value='');
   }
   $('#overlay').classList.add('show');
   $('#sheet').classList.add('show');
@@ -1054,8 +1130,10 @@ async function saveEntry(){
     delete urlCache[photoId];
   }
   const ingredients = $('#fIngredients').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const companions = $('#fWith').value.split(/[,，、\n]/).map(s=>s.trim()).filter(Boolean);
   const entry={
     id, date, time:$('#fTime').value, name, category:selCat, type:selType, mood:selMood, photoId,
+    companions,
     note:$('#fNote').value.trim(),
     ingredients: selCat==='home'?ingredients:[],
     steps: selCat==='home'?$('#fSteps').value.trim():'',
@@ -1066,6 +1144,7 @@ async function saveEntry(){
   };
   await DB.put(entry);
   entries = await DB.all();
+  renderPeopleChips();
   btn.disabled=false; btn.textContent='保存';
   closeSheet();
   toast(editing?'已更新 ✏️':'记好啦 🎉');
@@ -1078,6 +1157,7 @@ async function deleteEntry(){
   if(editing.photoId) await DB.delPhoto(editing.photoId);
   await DB.del(editing.id);
   entries = await DB.all();
+  renderPeopleChips();
   closeSheet();
   toast('已删除');
   render();
@@ -1155,7 +1235,8 @@ function closeSearch(){
 }
 function searchMatch(e,q){
   if(!q) return true;
-  const hay=[e.name,e.note,e.shop,e.restName,e.restLoc,e.steps,(e.ingredients||[]).join(' ')]
+  const hay=[e.name,e.note,e.shop,e.restName,e.restLoc,e.steps,
+             (e.ingredients||[]).join(' '),(e.companions||[]).join(' ')]
             .filter(Boolean).join(' ').toLowerCase();
   return hay.includes(q);
 }
@@ -1247,6 +1328,7 @@ async function importData(file){
   }
   localStorage.setItem('seeded','1');   // never re-seed demo after a real import
   entries=await DB.all();
+  renderPeopleChips();
   closeMenu();
   toast(`已导入 ${data.entries.length} 条 ✅`);
   render();
@@ -1257,6 +1339,49 @@ $('#menuOverlay').addEventListener('click',closeMenu);
 $('#exportBtn').addEventListener('click',exportData);
 $('#importBtn').addEventListener('click',()=>$('#importInput').click());
 $('#importInput').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) importData(f); e.target.value=''; });
+
+/* ---------- falling photo wall ---------- */
+let _fallList=[];
+function playFall(y,m){
+  _fallList = entries.filter(e=>{const d=parseYmd(e.date);return d.getFullYear()===y&&d.getMonth()===m;})
+                     .sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+  $('#fallTitle').textContent = `${m+1}月 · 吃过的 ${_fallList.length} 样`;
+  $('#fallOverlay').classList.add('show');
+  document.body.style.overflow='hidden';
+  dropAll();
+}
+function closeFall(){ $('#fallOverlay').classList.remove('show'); document.body.style.overflow=''; $('#fallStage').innerHTML=''; }
+async function dropAll(){
+  const stage=$('#fallStage'); stage.innerHTML='';
+  if(_fallList.length===0){ stage.innerHTML=`<div class="fall-empty">这个月还没有记录 🍂<br>记几餐再回来看掉落动画吧</div>`; return; }
+  const W=stage.clientWidth, H=stage.clientHeight;
+  const spread = Math.min(W*0.30, 150);   // horizontal scatter of the pile
+  for(let i=0;i<_fallList.length;i++){
+    const e=_fallList[i];
+    const el=document.createElement('div'); el.className='fall-item';
+    if(e.photoId){ const u=await photoURL(e.photoId); if(u) el.style.backgroundImage=`url("${u}")`; else markEmoji(el,e); }
+    else markEmoji(el,e);
+    if(e.name){ const cap=document.createElement('div'); cap.className='cap'; cap.textContent=e.name; el.appendChild(cap); }
+    el.style.zIndex=i;
+    stage.appendChild(el);
+    const lx=(Math.random()-0.5)*2*spread;
+    const ly=H*0.50 + Math.random()*(H*0.30);     // land in lower half -> a heap
+    const rot=(Math.random()-0.5)*46;
+    const startX=lx+(Math.random()-0.5)*80;
+    el.animate([
+      {transform:`translate(calc(-50% + ${startX}px), -240px) rotate(${(rot*0.4-25)}deg)`, opacity:0},
+      {opacity:1, offset:0.06},
+      {transform:`translate(calc(-50% + ${lx}px), ${ly}px) rotate(${rot}deg)`, opacity:1}
+    ], {duration:680, delay:i*140, easing:'cubic-bezier(.45,.05,.25,1.2)', fill:'forwards'});
+  }
+}
+function markEmoji(el,e){
+  el.classList.add('emoji');
+  el.style.background=CATS[e.category].bg;
+  el.append((e.type||'meal')==='drink'?'🥤':CATS[e.category].icon);
+}
+$('#fallClose').addEventListener('click',closeFall);
+$('#fallReplay').addEventListener('click',dropAll);
 
 // swipe to change period
 let tsx=0,tsy=0;
@@ -1278,6 +1403,7 @@ window.addEventListener('resize',positionPill);
     await seedDemo();
     localStorage.setItem('seeded','1');
   }
+  renderPeopleChips();
   render();
 })();
 
@@ -1293,7 +1419,7 @@ async function seedDemo(){
       ingredients:['意式浓缩 1份','牛奶 200ml'],steps:'1. 萃取浓缩\n2. 打奶泡\n3. 慢慢倒出花型',shop:'',restName:'',restLoc:'',photoId:null},
     {id:'demo3',date:ds,time:'12:30',name:'便利店三明治',category:'bought',type:'meal',mood:3,shop:'7-11 便利店',note:'赶时间随便吃的',ingredients:[],steps:'',restName:'',restLoc:'',photoId:null},
     {id:'demo4',date:ys,time:'15:00',name:'珍珠奶茶',category:'bought',type:'drink',mood:5,shop:'喜茶',note:'三分糖刚刚好',ingredients:[],steps:'',restName:'',restLoc:'',photoId:null},
-    {id:'demo5',date:ys,time:'19:00',name:'川味火锅',category:'restaurant',type:'meal',mood:5,restName:'蜀大侠火锅',restLoc:'市中心店 · 和室友聚餐',note:'毛肚和虾滑绝了!下次还来',ingredients:[],steps:'',shop:'',photoId:null},
+    {id:'demo5',date:ys,time:'19:00',name:'川味火锅',category:'restaurant',type:'meal',mood:5,restName:'蜀大侠火锅',restLoc:'市中心店 · 聚餐',note:'毛肚和虾滑绝了!下次还来',ingredients:[],steps:'',shop:'',companions:['室友','小明'],photoId:null},
   ];
   for(const e of demo){ e.updatedAt=Date.now(); await DB.put(e); }
   entries = await DB.all();

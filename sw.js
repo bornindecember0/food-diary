@@ -1,7 +1,7 @@
 /* 食记 Food Diary — service worker
    strategy: precache the shell, then stale-while-revalidate for same-origin GETs.
    bump CACHE when you change app files so clients refresh. */
-const CACHE = 'food-diary-v3';
+const CACHE = 'food-diary-v4';
 const ASSETS = [
   './',
   './index.html',
