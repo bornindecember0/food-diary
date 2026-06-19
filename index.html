@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="theme-color" content="#fff7ef" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="食记" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <title>食记 · Food Diary</title>
 <style>
   :root{
@@ -416,7 +421,7 @@
     <button class="x" id="closeSheet">✕</button>
   </div>
   <div class="scont">
-    <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none" />
+    <input type="file" id="fileInput" accept="image/*" style="display:none" />
     <div class="photo-pick" id="photoPick">
       <div class="ph-empty" id="phEmpty">
         <div class="ic">📷</div>
@@ -1188,6 +1193,15 @@ async function seedDemo(){
   ];
   for(const e of demo){ e.updatedAt=Date.now(); await DB.put(e); }
   entries = await DB.all();
+}
+</script>
+
+<script>
+/* register service worker for offline / installable PWA */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW failed',err));
+  });
 }
 </script>
 </body>
