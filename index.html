@@ -319,14 +319,26 @@
     border-radius:20px;margin-top:8px;margin-left:6px;background:#efe7dd;color:var(--ink)}
   .moodface{font-size:18px;margin-left:6px;vertical-align:middle}
 
-  /* ---------- header icon button (search) ---------- */
+  /* ---------- header icon buttons ---------- */
   .title{position:relative}
+  .icbtns{position:absolute;right:0;top:2px;display:flex;gap:8px}
   .iconbtn{
-    position:absolute;right:0;top:2px;border:0;width:42px;height:42px;border-radius:14px;
+    border:0;width:42px;height:42px;border-radius:14px;
     background:var(--bg2);box-shadow:var(--shadow);font-size:19px;cursor:pointer;display:grid;place-items:center;
     transition:transform .15s;
   }
   .iconbtn:active{transform:scale(.9)}
+
+  /* ---------- menu / backup sheet ---------- */
+  .menu-row{display:flex;gap:13px;align-items:center;width:100%;border:0;background:var(--bg2);
+    box-shadow:var(--shadow);border-radius:16px;padding:15px 16px;font:inherit;cursor:pointer;text-align:left;
+    margin-bottom:12px;transition:transform .15s}
+  .menu-row:active{transform:scale(.98)}
+  .menu-row .mi{font-size:24px;flex:0 0 auto}
+  .menu-row .mt{font-weight:700;font-size:15px}
+  .menu-row .md{font-size:12px;color:var(--ink-soft);margin-top:2px}
+  .menu-note{font-size:12px;color:var(--ink-soft);line-height:1.6;background:var(--c-home-bg);
+    border-radius:14px;padding:12px 14px;margin-top:4px}
 
   /* ---------- search results ---------- */
   .sres{display:flex;flex-direction:column;gap:10px;margin-top:14px}
@@ -379,7 +391,10 @@
         <h1>食记</h1>
         <div class="sub" id="sub">记录每一餐的小确幸</div>
       </div>
-      <button class="iconbtn" id="searchBtn" aria-label="搜索">🔍</button>
+      <div class="icbtns">
+        <button class="iconbtn" id="searchBtn" aria-label="搜索">🔍</button>
+        <button class="iconbtn" id="menuBtn" aria-label="备份">☰</button>
+      </div>
     </div>
 
     <div class="seg" id="seg">
@@ -533,6 +548,30 @@
       <div class="moods mini" id="searchMoods" style="flex:1"></div>
     </div>
     <div class="sres" id="searchResults"></div>
+  </div>
+</div>
+
+<!-- Menu / backup sheet -->
+<div class="overlay" id="menuOverlay"></div>
+<div class="sheet" id="menuSheet">
+  <div class="grab"></div>
+  <div class="shead">
+    <h2>备份与设置</h2>
+    <button class="x" id="closeMenu">✕</button>
+  </div>
+  <div class="scont">
+    <input type="file" id="importInput" accept="application/json,.json" style="display:none" />
+    <button class="menu-row" id="exportBtn">
+      <span class="mi">📤</span>
+      <span><span class="mt">导出备份</span><span class="md" id="exportDesc">把所有记录和照片存成一个文件</span></span>
+    </button>
+    <button class="menu-row" id="importBtn">
+      <span class="mi">📥</span>
+      <span><span class="mt">导入备份</span><span class="md">从备份文件恢复(会替换当前数据)</span></span>
+    </button>
+    <div class="menu-note">
+      💡 提示:网页版和「主屏 App」在 iPhone 上是<b>各自独立的存储</b>,数据不互通。想把网页里记的搬进主屏 App,就在网页里<b>导出</b>,再到主屏 App 里<b>导入</b>。换手机也是一样的方法。
+    </div>
   </div>
 </div>
 
@@ -1160,6 +1199,65 @@ $('#closeSearch').addEventListener('click',closeSearch);
 $('#searchOverlay').addEventListener('click',closeSearch);
 $('#searchInput').addEventListener('input',doSearch);
 
+/* ---------- backup: export / import ---------- */
+function openMenu(){
+  $('#exportDesc').textContent = `共 ${entries.length} 条记录,含照片`;
+  $('#menuOverlay').classList.add('show');
+  $('#menuSheet').classList.add('show');
+  document.body.style.overflow='hidden';
+}
+function closeMenu(){
+  $('#menuOverlay').classList.remove('show');
+  $('#menuSheet').classList.remove('show');
+  document.body.style.overflow='';
+}
+function blobToDataURL(blob){
+  return new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(blob);});
+}
+async function exportData(){
+  if(entries.length===0){ toast('还没有记录可导出'); return; }
+  toast('正在打包…');
+  const out={app:'food-diary',version:1,exportedAt:new Date().toISOString(),entries:[]};
+  for(const e of entries){
+    const item={...e};
+    if(e.photoId){ const blob=await DB.getPhoto(e.photoId); if(blob) item.photo=await blobToDataURL(blob); }
+    out.entries.push(item);
+  }
+  const blob=new Blob([JSON.stringify(out)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`食记备份-${ymd(new Date())}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  toast('已导出备份 📤');
+}
+async function importData(file){
+  let data;
+  try{ data=JSON.parse(await file.text()); }catch(_){ toast('文件无法读取'); return; }
+  if(!data || !Array.isArray(data.entries)){ toast('不是有效的备份文件'); return; }
+  if(!confirm(`导入 ${data.entries.length} 条记录?\n这会替换当前所有数据。`)) return;
+  // wipe current
+  for(const e of entries){ if(e.photoId) await DB.delPhoto(e.photoId); await DB.del(e.id); }
+  for(const k in urlCache){ URL.revokeObjectURL(urlCache[k]); delete urlCache[k]; }
+  // load backup
+  for(const item of data.entries){
+    const {photo,...e}=item;
+    if(photo && e.photoId){ try{ const blob=await (await fetch(photo)).blob(); await DB.putPhoto(e.photoId,blob); }catch(_){} }
+    await DB.put(e);
+  }
+  localStorage.setItem('seeded','1');   // never re-seed demo after a real import
+  entries=await DB.all();
+  closeMenu();
+  toast(`已导入 ${data.entries.length} 条 ✅`);
+  render();
+}
+$('#menuBtn').addEventListener('click',openMenu);
+$('#closeMenu').addEventListener('click',closeMenu);
+$('#menuOverlay').addEventListener('click',closeMenu);
+$('#exportBtn').addEventListener('click',exportData);
+$('#importBtn').addEventListener('click',()=>$('#importInput').click());
+$('#importInput').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) importData(f); e.target.value=''; });
+
 // swipe to change period
 let tsx=0,tsy=0;
 $('#main').parentElement.addEventListener('touchstart',e=>{tsx=e.touches[0].clientX;tsy=e.touches[0].clientY;},{passive:true});
@@ -1172,8 +1270,14 @@ window.addEventListener('resize',positionPill);
 
 /* ---------- boot ---------- */
 (async function init(){
+  // ask the browser to keep our data (reduces auto-eviction)
+  try{ if(navigator.storage && navigator.storage.persist) await navigator.storage.persist(); }catch(_){}
   try{ entries = await DB.all(); }catch(err){ console.error(err); entries=[]; }
-  if(entries.length===0) await seedDemo();
+  // seed demo only on the very first run, never again (so an emptied diary stays empty)
+  if(entries.length===0 && !localStorage.getItem('seeded')){
+    await seedDemo();
+    localStorage.setItem('seeded','1');
+  }
   render();
 })();
 
